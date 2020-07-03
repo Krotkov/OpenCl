@@ -4,10 +4,10 @@ __kernel void mul_matrix(__global float const* const a,
                     uint const n,
                     uint const m,
                     uint const k) {
-    uint const global_i     = get_global_id(1) * ELEMS_PER_THREAD;
-    uint const global_j     = get_global_id(0);
-    uint const tile_i       = get_local_id(1) * ELEMS_PER_THREAD;
-    uint const tile_j       = get_local_id(0);
+    uint const global_i = get_global_id(1) * ELEMS_PER_THREAD;
+    uint const global_j = get_global_id(0);
+    uint const tile_i = get_local_id(1) * ELEMS_PER_THREAD;
+    uint const tile_j = get_local_id(0);
 
     local float A_sub[TILE_SIZE][TILE_SIZE];
     local float B_sub[TILE_SIZE][TILE_SIZE];
@@ -17,7 +17,7 @@ __kernel void mul_matrix(__global float const* const a,
         thread_res[i] = 0;
     }
 
-    uint const tile_cnt     = m / TILE_SIZE;
+    uint const tile_cnt = m / TILE_SIZE;
     for (uint tile_id = 0; tile_id < tile_cnt; ++tile_id) {
 
         for (uint shift = 0; shift < ELEMS_PER_THREAD; shift++) {
