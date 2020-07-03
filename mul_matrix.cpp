@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <iostream>
 #include <random>
+#include "consts.h"
 
 void fill_matrix(float *ptr, size_t cnt) {
     std::random_device rd;
@@ -15,7 +16,7 @@ void fill_matrix(float *ptr, size_t cnt) {
     }
 }
 
-bool check_matrix(size_t n, size_t m, size_t k, float* a, float* b, float* c) {
+bool check_matrix(size_t n, size_t m, size_t k, float *a, float *b, float *c) {
     auto *res = new float[k * n]();
 
     for (size_t i = 0; i < n; ++i) {
@@ -69,7 +70,6 @@ int main() {
                 clGetDeviceInfo(devices[j], CL_DEVICE_VENDOR, 0, NULL, &device_vendor_size);
                 std::string device_vendor;
                 device_vendor.resize(device_vendor_size);
-
                 clGetDeviceInfo(devices[j], CL_DEVICE_VENDOR, device_vendor_size, device_vendor.data(), NULL);
 
                 //TODO: Add something for amd?
@@ -114,18 +114,26 @@ int main() {
 
     FILE *kernel_file = fopen("../mul_matrix.cl", "r");
     if (!kernel_file) {
-        perror("Can't open file");
+        perror("Can't open kernel file");
         return 0;
     }
     size_t file_size = 1024 * 20;
+    char **program_code = new char*[2];
+    program_code[0] = new char[file_size];
+    program_code[1] = new char[file_size];
 
-    char *program_code = new char[file_size];
-    size_t code_len = fread(program_code, 1, file_size, kernel_file);
+    size_t *code_len = new size_t[2];
+    code_len[1] = fread(program_code[1], 1, file_size, kernel_file);
 
-//    printf("%s", program_code);
+    FILE *header_file = fopen("../consts.h", "r");
+    if (!header_file) {
+        perror("Can't open header file");
+        return 0;
+    }
+    code_len[0] = fread(program_code[0], 1, file_size, header_file);
 
-    cl_program program = clCreateProgramWithSource(context, 1, (const char **) &program_code,
-                                                   &code_len, &error_code);
+    cl_program program = clCreateProgramWithSource(context, 2, (const char **) program_code,
+                                                   code_len, &error_code);
     if (error_code < 0) {
         perror("clCreateProgramWithSource failed");
         return 0;
@@ -153,7 +161,7 @@ int main() {
     fill_matrix(array1, n * m);
     fill_matrix(array2, m * k);
 
-    char* kernel_name = "mul_matrix";
+    char *kernel_name = "mul_matrix";
 
     cl_kernel kernel = clCreateKernel(program, kernel_name, &error_code);
     if (error_code < 0) {
@@ -195,23 +203,35 @@ int main() {
     clSetKernelArg(kernel, 5, sizeof(cl_uint), &k);
 
     size_t work_offset[] = {0, 0};
-    size_t work_size[] = {n, k};
+    size_t work_size[] = {n, k / ELEMS_PER_THREAD};
+    size_t local_group_size[] = {TILE_SIZE, TILE_SIZE / ELEMS_PER_THREAD};
     cl_event run_event;
-    clEnqueueNDRangeKernel(queue, kernel, 2, work_offset, work_size, 0, 0, 0, &run_event);
+    clEnqueueNDRangeKernel(queue, kernel, 2, work_offset, work_size, local_group_size, 0, 0, &run_event);
     clEnqueueReadBuffer(queue, array_res_buffer, true, 0, array3_size, array_res, 0, 0, 0);
 
     cl_ulong t_start = 0, t_end = 0;
     clGetEventProfilingInfo(run_event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t_start, 0);
     clGetEventProfilingInfo(run_event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t_end, 0);
 
+    auto time = t_end - t_start;
+
     printf("%lu ns elapsed\n", t_end - t_start);
+    printf("GFLOPS: %f\n", (double)(2*m*n*k) / time);
 
-
-    printf("Please wait, check results...\n");
+    printf("Please wait, check the result...\n");
     if (check_matrix(n, m, k, array1, array2, array_res)) {
         printf("Matrix is OK\n");
     } else {
         printf("Matrix is Bad\n");
     }
+
+    delete[] array1;
+    delete[] array2;
+    delete[] array_res;
+    delete[] program_code[0];
+    delete[] program_code[1];
+    delete[] program_code;
+    delete[] code_len;
+    delete[] device_name;
     return 0;
 }
