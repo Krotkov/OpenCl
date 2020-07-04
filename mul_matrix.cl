@@ -12,7 +12,7 @@ __kernel void mul_matrix(__global float const* const a,
     local float A_sub[TILE_SIZE][TILE_SIZE];
     local float B_sub[TILE_SIZE][TILE_SIZE];
 
-    float thread_res[ELEMS_PER_THREAD];
+    local float thread_res[ELEMS_PER_THREAD];
     for (uint i = 0; i < ELEMS_PER_THREAD; i++) {
         thread_res[i] = 0;
     }

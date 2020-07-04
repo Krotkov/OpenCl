@@ -6,13 +6,12 @@
 #include <cstdio>
 #include <iostream>
 #include <random>
-#include "consts.h"
+#include "consts_mul.h"
 
 void fill_matrix(float *ptr, size_t cnt) {
-    std::random_device rd;
-    std::uniform_real_distribution<float> dis(0.1, 200.0);
+    srand(time(NULL));
     for (size_t i = 0; i < cnt; ++i) {
-        ptr[i] = dis(rd) / cnt;
+        ptr[i] = (float) rand() / RAND_MAX * 500.0 / cnt;
     }
 }
 
@@ -72,11 +71,13 @@ int main() {
                 device_vendor.resize(device_vendor_size);
                 clGetDeviceInfo(devices[j], CL_DEVICE_VENDOR, device_vendor_size, device_vendor.data(), NULL);
 
-                //TODO: Add something for amd?
-                if (device_vendor.find("Intel") != std::string::npos) {
-                    device_GPU_integrated = devices[j];
-                } else {
+                if (device_vendor.find("NVIDIA") != std::string::npos ||
+                    device_vendor.find("AMD") != std::string::npos ||
+                    device_vendor.find("nvidia") != std::string::npos ||
+                    device_vendor.find("amd") != std::string::npos) {
                     device_GPU = devices[j];
+                } else {
+                    device_GPU_integrated = devices[j];
                 }
             }
             delete[] device_type;
@@ -98,6 +99,21 @@ int main() {
     clGetDeviceInfo(device, CL_DEVICE_NAME, device_name_size, device_name, &device_name_size);
     printf("Running on:\n%s\n", device_name);
 
+    cl_ulong max_work_group_size;
+    clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(cl_ulong), &max_work_group_size,
+                    nullptr);
+    printf("Max work group size: %lu\n", max_work_group_size);
+
+    cl_ulong max_local_mem_size;
+    clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(cl_ulong), &max_local_mem_size,
+                    nullptr);
+    printf("Max local memory size: %lu\n", max_local_mem_size);
+
+    if (max_work_group_size <= TILE_SIZE * TILE_SIZE / ELEMS_PER_THREAD) {
+        printf("Local group size is too big. Please redefine TILE_SIZE in consts_mul.h\n");
+        return 0;
+    }
+
     cl_int error_code;
 
     cl_context context = clCreateContext(NULL, 1, &device, 0, 0, &error_code);
@@ -118,14 +134,14 @@ int main() {
         return 0;
     }
     size_t file_size = 1024 * 20;
-    char **program_code = new char*[2];
+    char **program_code = new char *[2];
     program_code[0] = new char[file_size];
     program_code[1] = new char[file_size];
 
     size_t *code_len = new size_t[2];
     code_len[1] = fread(program_code[1], 1, file_size, kernel_file);
 
-    FILE *header_file = fopen("../consts.h", "r");
+    FILE *header_file = fopen("../consts_mul.h", "r");
     if (!header_file) {
         perror("Can't open header file");
         return 0;
@@ -202,11 +218,10 @@ int main() {
     clSetKernelArg(kernel, 4, sizeof(cl_uint), &m);
     clSetKernelArg(kernel, 5, sizeof(cl_uint), &k);
 
-    size_t work_offset[] = {0, 0};
     size_t work_size[] = {n, k / ELEMS_PER_THREAD};
     size_t local_group_size[] = {TILE_SIZE, TILE_SIZE / ELEMS_PER_THREAD};
     cl_event run_event;
-    clEnqueueNDRangeKernel(queue, kernel, 2, work_offset, work_size, local_group_size, 0, 0, &run_event);
+    clEnqueueNDRangeKernel(queue, kernel, 2, NULL, work_size, local_group_size, 0, 0, &run_event);
     clEnqueueReadBuffer(queue, array_res_buffer, true, 0, array3_size, array_res, 0, 0, 0);
 
     cl_ulong t_start = 0, t_end = 0;
@@ -216,7 +231,7 @@ int main() {
     auto time = t_end - t_start;
 
     printf("%lu ns elapsed\n", t_end - t_start);
-    printf("GFLOPS: %f\n", (double)(2*m*n*k) / time);
+    printf("GFLOPS: %f\n", (double) (2 * m * n * k) / time);
 
     printf("Please wait, check the result...\n");
     if (check_matrix(n, m, k, array1, array2, array_res)) {
