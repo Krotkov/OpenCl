@@ -5,7 +5,6 @@
 #include <CL/opencl.h>
 #include <cstdio>
 #include <iostream>
-#include <random>
 #include "consts_mul.h"
 
 void fill_matrix(float *ptr, size_t cnt) {
@@ -28,8 +27,7 @@ bool check_matrix(size_t n, size_t m, size_t k, float *a, float *b, float *c) {
     for (size_t i = 0; i < n; ++i) {
         for (size_t l = 0; l < k; ++l) {
             float delta = res[i * k + l] - c[i * k + l];
-            float abs_delta = fabsf(delta);
-            if (abs_delta >= 0.1) {
+            if (abs(delta) >= 0.1) {
                 delete[] res;
                 return false;
             }
@@ -133,7 +131,7 @@ int main() {
         perror("Can't open kernel file");
         return 0;
     }
-    size_t file_size = 1024 * 20;
+    size_t file_size = 1024 * 3;
     char **program_code = new char *[2];
     program_code[0] = new char[file_size];
     program_code[1] = new char[file_size];

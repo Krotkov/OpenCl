@@ -3,7 +3,6 @@ __kernel void prefix_sum(__global float const *const a,
                          __global float *const tmp,
                          ulong const n) {
   const uint j = get_local_id(0);
-  const uint sz = get_local_size(0);
   const ulong log2_n = log2((float)n);
 
   tmp[j] = a[j];

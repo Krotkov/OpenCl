@@ -6,7 +6,6 @@
 #include <CL/opencl.h>
 #include <cstdio>
 #include <iostream>
-#include <random>
 
 void fill_array(float *ptr, size_t cnt) {
     srand(time(NULL));
@@ -17,16 +16,11 @@ void fill_array(float *ptr, size_t cnt) {
 
 bool check_array(size_t n, float *a, float *b) {
     auto *res = new float[n]();
-
     res[0] = a[0];
-
     for (size_t i = 1; i < n; ++i) {
         res[i] = a[i] + res[i - 1];
-    }
-    for (size_t i = 0; i < n; ++i) {
         float delta = res[i] - b[i];
-        float abs_delta = fabsf(delta);
-        if (abs_delta >= 0.1) {
+        if (abs(delta) >= 0.1) {
             delete[] res;
             return false;
         }
@@ -122,7 +116,7 @@ int main() {
         perror("Can't open kernel file");
         return 0;
     }
-    size_t file_size = 1024 * 20;
+    size_t file_size = 1024 * 3;
     char *program_code = new char[file_size];
 
     size_t code_len;
