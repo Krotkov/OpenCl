@@ -1,38 +1,34 @@
 //
-// Created by kranya on 03.07.2020.
+// Created by kranya on 05.07.2020.
 //
+
 
 #include <CL/opencl.h>
 #include <cstdio>
 #include <iostream>
 #include <random>
-#include "consts_mul.h"
 
-void fill_matrix(float *ptr, size_t cnt) {
+void fill_array(float *ptr, size_t cnt) {
     srand(time(NULL));
     for (size_t i = 0; i < cnt; ++i) {
         ptr[i] = (float) rand() / RAND_MAX * 500.0 / cnt;
     }
 }
 
-bool check_matrix(size_t n, size_t m, size_t k, float *a, float *b, float *c) {
-    auto *res = new float[k * n]();
+bool check_array(size_t n, float *a, float *b) {
+    auto *res = new float[n]();
 
-    for (size_t i = 0; i < n; ++i) {
-        for (size_t j = 0; j < m; ++j) {
-            for (size_t l = 0; l < k; ++l) {
-                res[i * k + l] += a[i * m + j] * b[j * k + l];
-            }
-        }
+    res[0] = a[0];
+
+    for (size_t i = 1; i < n; ++i) {
+        res[i] = a[i] + res[i - 1];
     }
     for (size_t i = 0; i < n; ++i) {
-        for (size_t l = 0; l < k; ++l) {
-            float delta = res[i * k + l] - c[i * k + l];
-            float abs_delta = fabsf(delta);
-            if (abs_delta >= 0.1) {
-                delete[] res;
-                return false;
-            }
+        float delta = res[i] - b[i];
+        float abs_delta = fabsf(delta);
+        if (abs_delta >= 0.1) {
+            delete[] res;
+            return false;
         }
     }
     delete[] res;
@@ -104,15 +100,8 @@ int main() {
                     nullptr);
     printf("Max work group size: %lu\n", max_work_group_size);
 
-    cl_ulong max_local_mem_size;
-    clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(cl_ulong), &max_local_mem_size,
-                    nullptr);
-    printf("Max local memory size: %lu\n", max_local_mem_size);
-
-    if (max_work_group_size <= TILE_SIZE * TILE_SIZE / ELEMS_PER_THREAD) {
-        printf("Local group size is too big. Please redefine TILE_SIZE in consts_mul.h\n");
-        return 0;
-    }
+    // Base version
+    size_t array_length = max_work_group_size;
 
     cl_int error_code;
 
@@ -128,28 +117,19 @@ int main() {
         return 0;
     }
 
-    FILE *kernel_file = fopen("../mul_matrix.cl", "r");
+    FILE *kernel_file = fopen("../prefix_sum.cl", "r");
     if (!kernel_file) {
         perror("Can't open kernel file");
         return 0;
     }
     size_t file_size = 1024 * 20;
-    char **program_code = new char *[2];
-    program_code[0] = new char[file_size];
-    program_code[1] = new char[file_size];
+    char *program_code = new char[file_size];
 
-    size_t *code_len = new size_t[2];
-    code_len[1] = fread(program_code[1], 1, file_size, kernel_file);
+    size_t code_len;
+    code_len = fread(program_code, 1, file_size, kernel_file);
 
-    FILE *header_file = fopen("../consts_mul.h", "r");
-    if (!header_file) {
-        perror("Can't open header file");
-        return 0;
-    }
-    code_len[0] = fread(program_code[0], 1, file_size, header_file);
-
-    cl_program program = clCreateProgramWithSource(context, 2, (const char **) program_code,
-                                                   code_len, &error_code);
+    cl_program program = clCreateProgramWithSource(context, 1, (const char **) &program_code,
+                                                   &code_len, &error_code);
     if (error_code < 0) {
         perror("clCreateProgramWithSource failed");
         return 0;
@@ -162,91 +142,85 @@ int main() {
         printf("Kernel file build successfully\n");
     }
 
-    const size_t n = 2048;
-    const size_t m = 512;
-    const size_t k = 1024;
+    const size_t n = array_length;
 
-    const size_t array1_size = n * m * sizeof(float);
-    const size_t array2_size = m * k * sizeof(float);
-    const size_t array3_size = n * k * sizeof(float);
+    const size_t array_size = n * sizeof(float);
 
-    auto *array1 = new float[n * m];
-    auto *array2 = new float[m * k];
-    auto *array_res = new float[n * k];
+    auto *array1 = new float[n];
+    auto *array_res = new float[n];
+    auto *array_tmp = new float[2*n];
 
-    fill_matrix(array1, n * m);
-    fill_matrix(array2, m * k);
+    fill_array(array1, n);
+    fill_array(array_res, n);
 
-    char *kernel_name = "mul_matrix";
+    char *kernel_name = "prefix_sum";
 
     cl_kernel kernel = clCreateKernel(program, kernel_name, &error_code);
     if (error_code < 0) {
         perror("clCreateKernel failed");
         return 0;
     }
-    cl_mem array1_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, array1_size, 0, &error_code);
+    cl_mem array1_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, array_size, 0, &error_code);
     if (error_code < 0) {
         perror("clCreateBuffer 1 failed");
         return 0;
     }
-    cl_mem array2_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, array2_size, 0, &error_code);
+    cl_mem array_res_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, array_size, 0, &error_code);
     if (error_code < 0) {
-        perror("clCreateBuffer 2 failed");
-        return 0;
-    }
-    cl_mem array_res_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, array3_size, 0, &error_code);
-    if (error_code < 0) {
-        perror("clCreateBuffer (result) failed");
+        perror("clCreateBuffer res failed");
         return 0;
     }
 
-    error_code = clEnqueueWriteBuffer(queue, array1_buffer, false, 0, array1_size, array1, 0, 0, 0);
+    cl_mem array_tmp_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 2*array_size, 0, &error_code);
+    if (error_code < 0) {
+        perror("clCreateBuffer tmp failed");
+        return 0;
+    }
+
+    error_code = clEnqueueWriteBuffer(queue, array1_buffer, false, 0, array_size, array1, 0, 0, 0);
     if (error_code < 0) {
         perror("clEnqueueWriteBuffer 1 failed");
         return 0;
     }
-    error_code = clEnqueueWriteBuffer(queue, array2_buffer, false, 0, array2_size, array2, 0, 0, 0);
+    error_code = clEnqueueWriteBuffer(queue, array_res_buffer, false, 0, array_size, array_res, 0, 0, 0);
     if (error_code < 0) {
-        perror("clEnqueueWriteBuffer 2 failed");
+        perror("clEnqueueWriteBuffer res failed");
+        return 0;
+    }
+
+    error_code = clEnqueueWriteBuffer(queue, array_tmp_buffer, false, 0, 2*array_size, array_tmp, 0, 0, 0);
+    if (error_code < 0) {
+        perror("clEnqueueWriteBuffer tmp failed");
         return 0;
     }
 
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &array1_buffer);
-    clSetKernelArg(kernel, 1, sizeof(cl_mem), &array2_buffer);
-    clSetKernelArg(kernel, 2, sizeof(cl_mem), &array_res_buffer);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &array_res_buffer);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), &array_tmp_buffer);
     clSetKernelArg(kernel, 3, sizeof(cl_uint), &n);
-    clSetKernelArg(kernel, 4, sizeof(cl_uint), &m);
-    clSetKernelArg(kernel, 5, sizeof(cl_uint), &k);
 
-    size_t work_size[] = {n, k / ELEMS_PER_THREAD};
-    size_t local_group_size[] = {TILE_SIZE, TILE_SIZE / ELEMS_PER_THREAD};
+    size_t work_size[] = {array_length};
+    size_t local_group_size[] = {array_length};
     cl_event run_event;
-    clEnqueueNDRangeKernel(queue, kernel, 2, NULL, work_size, local_group_size, 0, 0, &run_event);
-    clEnqueueReadBuffer(queue, array_res_buffer, true, 0, array3_size, array_res, 0, 0, 0);
+    clEnqueueNDRangeKernel(queue, kernel, 1, NULL, work_size, local_group_size, 0, 0, &run_event);
+    clEnqueueReadBuffer(queue, array_res_buffer, true, 0, array_size, array_res, 0, 0, 0);
 
     cl_ulong t_start = 0, t_end = 0;
     clGetEventProfilingInfo(run_event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t_start, 0);
     clGetEventProfilingInfo(run_event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t_end, 0);
 
-    auto time = t_end - t_start;
-
     printf("%lu ns elapsed\n", t_end - t_start);
-    printf("GFLOPS: %f\n", (double) (2 * m * n * k) / time);
 
     printf("Please wait, check the result...\n");
-    if (check_matrix(n, m, k, array1, array2, array_res)) {
-        printf("Matrix is OK\n");
+    if (check_array(n, array1, array_res)) {
+        printf("Prefix sum is OK\n");
     } else {
-        printf("Matrix is Bad\n");
+        printf("Prefix sum is Bad\n");
     }
 
     delete[] array1;
-    delete[] array2;
     delete[] array_res;
-    delete[] program_code[0];
-    delete[] program_code[1];
     delete[] program_code;
-    delete[] code_len;
     delete[] device_name;
     return 0;
 }

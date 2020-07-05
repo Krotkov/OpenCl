@@ -10,3 +10,6 @@ add_executable(test main.cpp)
 
 add_executable(mul_matrix mul_matrix.cpp)
 target_link_libraries(mul_matrix OpenCL)
+
+add_executable(prefix_sum prefix_sum.cpp)
+target_link_libraries(prefix_sum OpenCL)
