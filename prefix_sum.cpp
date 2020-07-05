@@ -117,7 +117,7 @@ int main() {
         return 0;
     }
 
-    FILE *kernel_file = fopen("../prefix_sum.cl", "r");
+    FILE *kernel_file = fopen("prefix_sum.cl", "r");
     if (!kernel_file) {
         perror("Can't open kernel file");
         return 0;

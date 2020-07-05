@@ -128,7 +128,7 @@ int main() {
         return 0;
     }
 
-    FILE *kernel_file = fopen("../mul_matrix.cl", "r");
+    FILE *kernel_file = fopen("mul_matrix.cl", "r");
     if (!kernel_file) {
         perror("Can't open kernel file");
         return 0;
@@ -141,7 +141,7 @@ int main() {
     size_t *code_len = new size_t[2];
     code_len[1] = fread(program_code[1], 1, file_size, kernel_file);
 
-    FILE *header_file = fopen("../consts_mul.h", "r");
+    FILE *header_file = fopen("consts_mul.h", "r");
     if (!header_file) {
         perror("Can't open header file");
         return 0;
